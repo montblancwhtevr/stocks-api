@@ -1,0 +1,21 @@
+{
+    "name": "warehouse/stock-api",
+    "description": "Lightweight warehouse stock management JSON API",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": ">=7.3",
+        "ext-pdo": "*",
+        "ext-pdo_sqlite": "*",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "WarehouseStock\\": "src/"
+        }
+    },
+    "scripts": {
+        "serve": "php -S 127.0.0.1:8000 -t public",
+        "check": "php -l public/index.php"
+    }
+}

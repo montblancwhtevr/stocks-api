@@ -1,0 +1,16 @@
+.env
+
+database/*.sqlite
+database/*.sqlite-*
+
+logs/*
+!logs/.gitkeep
+
+vendor/
+
+*.zip
+*.tar
+*.tar.gz
+
+.DS_Store
+Thumbs.db
