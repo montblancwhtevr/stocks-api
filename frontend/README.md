@@ -16,11 +16,14 @@ Default API URL:
 https://api.hiada.my.id
 ```
 
-You can override it by copying `.env.example` to `.env` and changing:
+Copy `.env.example` to `.env` and set the API URL plus token before running or building:
 
 ```env
 VITE_API_BASE_URL=https://api.hiada.my.id
+VITE_API_TOKEN=your_secret_token_here
 ```
+
+The token is compiled into the frontend bundle. This is convenient for a private admin UI, but it is not the same as secure login because browser code can be inspected.
 
 ## Build
 

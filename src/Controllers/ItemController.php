@@ -44,9 +44,9 @@ final class ItemController extends BaseController
 
         $stmt = $this->db->prepare(
             'INSERT INTO db_items (item_name, category_name, unit, quantity, minimum_stock, description)
-             VALUES (:item_name, :category_name, :unit, :quantity, :minimum_stock, :description)'
+             VALUES (:item_name, :category_name, :unit, 0, :minimum_stock, :description)'
         );
-        $stmt->execute($this->params($data));
+        $stmt->execute($this->params($data, null));
 
         $id = (int) $this->db->lastInsertId();
         $item = $this->findById('db_items', $id);
@@ -70,7 +70,7 @@ final class ItemController extends BaseController
             return;
         }
 
-        $params = $this->params($data);
+        $params = $this->params($data, (int) $existing['quantity']);
         $params[':id'] = $id;
 
         $stmt = $this->db->prepare(
@@ -120,7 +120,6 @@ final class ItemController extends BaseController
         $itemName = trim((string) ($data['item_name'] ?? ''));
         $categoryName = isset($data['category_name']) ? trim((string) $data['category_name']) : null;
         $unit = trim((string) ($data['unit'] ?? 'pcs'));
-        $quantity = (int) ($data['quantity'] ?? 0);
         $minimumStock = (int) ($data['minimum_stock'] ?? 0);
 
         if ($itemName === '') {
@@ -139,10 +138,6 @@ final class ItemController extends BaseController
             $errors['unit'] = 'unit max length is 50';
         }
 
-        if ($quantity < 0) {
-            $errors['quantity'] = 'quantity must be >= 0';
-        }
-
         if ($minimumStock < 0) {
             $errors['minimum_stock'] = 'minimum_stock must be >= 0';
         }
@@ -150,15 +145,20 @@ final class ItemController extends BaseController
         return $errors;
     }
 
-    private function params(array $data): array
+    private function params(array $data, ?int $existingQuantity): array
     {
-        return [
+        $params = [
             ':item_name' => trim((string) $data['item_name']),
             ':category_name' => $this->stringOrNull($data, 'category_name'),
             ':unit' => $this->stringOrNull($data, 'unit') ?? 'pcs',
-            ':quantity' => (int) ($data['quantity'] ?? 0),
             ':minimum_stock' => (int) ($data['minimum_stock'] ?? 0),
             ':description' => $this->stringOrNull($data, 'description'),
         ];
+
+        if ($existingQuantity !== null) {
+            $params[':quantity'] = $existingQuantity;
+        }
+
+        return $params;
     }
 }

@@ -1,21 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { apiRequest, clearToken, getSettings, saveSettings } from './api.js';
+import { API_BASE_URL, API_TOKEN, apiRequest } from './api.js';
 
 const tabs = [
-  ['dashboard', 'Dashboard'],
-  ['departments', 'Departments'],
-  ['items', 'Items'],
-  ['stock-in', 'Stock In'],
-  ['stock-out', 'Stock Out'],
-  ['reports', 'Reports'],
-  ['logs', 'Logs'],
+  ['dashboard', 'Dashboard', '▦'],
+  ['departments', 'Departments', '▥'],
+  ['items', 'Items', '▤'],
+  ['stock-in', 'Stock In', '↙'],
+  ['stock-out', 'Stock Out', '↗'],
+  ['reports', 'Reports', '▧'],
+  ['logs', 'Logs', '↺'],
 ];
 
 const emptyItem = {
   item_name: '',
   category_name: '',
   unit: 'pcs',
-  quantity: 0,
   minimum_stock: 0,
   description: '',
   created_by: 'admin',
@@ -71,7 +70,6 @@ function toDateTimeParts(value) {
 }
 
 export default function App() {
-  const [settings, setSettings] = useState(getSettings);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -83,14 +81,33 @@ export default function App() {
   const [stockByDepartment, setStockByDepartment] = useState([]);
   const [departmentName, setDepartmentName] = useState('');
   const [itemForm, setItemForm] = useState(emptyItem);
+  const [itemFilters, setItemFilters] = useState({ search: '', category: '', lowStockOnly: false });
   const [stockIn, setStockIn] = useState(emptyStockIn);
   const [stockOut, setStockOut] = useState(emptyStockOut);
 
-  const isReady = settings.apiBaseUrl && settings.token;
+  const isReady = API_BASE_URL && API_TOKEN;
   const lowStockCount = useMemo(
     () => currentStock.filter((item) => Number(item.quantity) <= Number(item.minimum_stock)).length,
     [currentStock]
   );
+  const itemCategories = useMemo(
+    () => Array.from(new Set(items.map((item) => item.category_name).filter(Boolean))).sort(),
+    [items]
+  );
+  const filteredItems = useMemo(() => {
+    const search = itemFilters.search.trim().toLowerCase();
+
+    return items.filter((item) => {
+      const matchesSearch =
+        search === '' ||
+        item.item_name.toLowerCase().includes(search) ||
+        (item.description || '').toLowerCase().includes(search);
+      const matchesCategory = itemFilters.category === '' || item.category_name === itemFilters.category;
+      const matchesLowStock = !itemFilters.lowStockOnly || Number(item.quantity) <= Number(item.minimum_stock);
+
+      return matchesSearch && matchesCategory && matchesLowStock;
+    });
+  }, [items, itemFilters]);
 
   useEffect(() => {
     if (isReady) {
@@ -128,19 +145,6 @@ export default function App() {
       setLogs(logsRes.data || []);
       setStockByDepartment(byDepartmentRes.data || []);
     });
-  }
-
-  function handleSaveSettings(event) {
-    event.preventDefault();
-    saveSettings(settings);
-    setStatus('Settings saved');
-    refreshAll();
-  }
-
-  function logout() {
-    clearToken();
-    setSettings(getSettings());
-    setStatus('Token removed');
   }
 
   async function createDepartment(event) {
@@ -220,57 +224,46 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div>
-          <p className="eyebrow">Warehouse</p>
-          <h1>Stock Admin</h1>
+        <div className="brand">
+          <h1>Stocks App</h1>
+          {/* <p>Warehouse</p> */}
         </div>
         <nav>
-          {tabs.map(([key, label]) => (
+          {tabs.map(([key, label, icon]) => (
             <button key={key} className={activeTab === key ? 'active' : ''} onClick={() => setActiveTab(key)}>
-              {label}
+              <span className="nav-icon">{icon}</span>
+              <span>{label}</span>
             </button>
           ))}
         </nav>
+        <div className="sidebar-bottom">
+          {/* <button type="button" className="sidebar-cta" onClick={() => setActiveTab('stock-in')}>
+            Record Bulk Stock In
+          </button> */}
+          {/* <div className="admin-chip">
+            <span>WA</span>
+            <div>
+              <strong>Warehouse Admin</strong>
+              <small>admin.reg-a@nexus.com</small>
+            </div>
+          </div> */}
+        </div>
       </aside>
 
       <main>
-        <header className="topbar">
-          <form className="settings" onSubmit={handleSaveSettings}>
-            <label>
-              API
-              <input
-                value={settings.apiBaseUrl}
-                onChange={(event) => setSettings({ ...settings, apiBaseUrl: event.target.value })}
-                placeholder="https://api.hiada.my.id"
-              />
-            </label>
-            <label>
-              Token
-              <input
-                type="password"
-                value={settings.token}
-                onChange={(event) => setSettings({ ...settings, token: event.target.value })}
-                placeholder="Bearer token"
-              />
-            </label>
-            <button type="submit">Save</button>
-            <button type="button" className="secondary" onClick={logout}>
-              Clear
-            </button>
-          </form>
-        </header>
+        <header className="topbar" aria-label="Top navigation" />
 
         {status && <div className="notice success">{status}</div>}
         {error && <div className="notice error">{error}</div>}
-        {!isReady && <div className="notice">Set the API host and token to load data.</div>}
+        {!isReady && <div className="notice error">Frontend API host or token is not configured.</div>}
 
         {activeTab === 'dashboard' && (
           <section>
             <div className="metrics">
-              <Metric label="Items" value={items.length} />
-              <Metric label="Departments" value={departments.length} />
-              <Metric label="Low Stock" value={lowStockCount} />
-              <Metric label="Movements" value={movements.length} />
+              <Metric label="Total Items" value={items.length} note="Master SKUs" />
+              <Metric label="Departments" value={departments.length} note="Active units" />
+              <Metric label="Low Stock Items" value={lowStockCount} note="Review critical SKUs" danger />
+              <Metric label="Total Movements" value={movements.length} note="Audit records" />
             </div>
             <Panel title="Recent Movements">
               <MovementTable rows={movements.slice(0, 8)} />
@@ -303,18 +296,47 @@ export default function App() {
 
         {activeTab === 'items' && (
           <section className="grid-two wide-right">
-            <Panel title="Create Item">
+            <Panel title="Create Item Master">
               <ItemForm value={itemForm} onChange={setItemForm} onSubmit={createItem} />
             </Panel>
             <Panel title="Items">
+              <div className="filters">
+                <input
+                  value={itemFilters.search}
+                  onChange={(event) => setItemFilters({ ...itemFilters, search: event.target.value })}
+                  placeholder="Search item"
+                />
+                <select
+                  value={itemFilters.category}
+                  onChange={(event) => setItemFilters({ ...itemFilters, category: event.target.value })}
+                >
+                  <option value="">All categories</option>
+                  {itemCategories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+                <label className="check-filter">
+                  <input
+                    type="checkbox"
+                    checked={itemFilters.lowStockOnly}
+                    onChange={(event) => setItemFilters({ ...itemFilters, lowStockOnly: event.target.checked })}
+                  />
+                  Low stock
+                </label>
+              </div>
               <Table
-                columns={['Item', 'Category', 'Unit', 'Qty', 'Min', '']}
-                rows={items.map((item) => [
-                  item.item_name,
+                columns={['SKU / Item', 'Category', 'Qty', 'Min. Stock', 'Status', '']}
+                rows={filteredItems.map((item) => [
+                  <div className="item-cell">
+                    <strong>{item.item_name}</strong>
+                    {item.description ? <small>{item.description}</small> : null}
+                  </div>,
                   item.category_name || '-',
-                  item.unit,
-                  item.quantity,
-                  item.minimum_stock,
+                  <strong>{item.quantity} {item.unit}</strong>,
+                  `${item.minimum_stock} ${item.unit}`,
+                  <StockStatus item={item} />,
                   <button className="danger" onClick={() => deleteItem(item.id)}>
                     Delete
                   </button>,
@@ -375,13 +397,31 @@ export default function App() {
   );
 }
 
-function Metric({ label, value }) {
+function Metric({ label, value, note, danger = false }) {
   return (
-    <div className="metric">
+    <div className={`metric ${danger ? 'danger-metric' : ''}`}>
       <span>{label}</span>
       <strong>{value}</strong>
+      {note ? <small>{note}</small> : null}
     </div>
   );
+}
+
+function StockStatus({ item }) {
+  const quantity = Number(item.quantity);
+  const minimum = Number(item.minimum_stock);
+  const isCritical = quantity <= minimum;
+  const isLow = !isCritical && quantity <= minimum * 1.5;
+
+  if (isCritical) {
+    return <span className="badge critical">Critical</span>;
+  }
+
+  if (isLow) {
+    return <span className="badge low">Low Stock</span>;
+  }
+
+  return <span className="badge stable">Stable</span>;
 }
 
 function Panel({ title, children }) {
@@ -444,35 +484,42 @@ function MovementTable({ rows }) {
 function ItemForm({ value, onChange, onSubmit }) {
   return (
     <form onSubmit={onSubmit}>
-      <input value={value.item_name} onChange={(event) => onChange({ ...value, item_name: event.target.value })} placeholder="Item name" />
-      <input
-        value={value.category_name}
-        onChange={(event) => onChange({ ...value, category_name: event.target.value })}
-        placeholder="Category optional"
-      />
-      <div className="form-row">
-        <input value={value.unit} onChange={(event) => onChange({ ...value, unit: event.target.value })} placeholder="Unit" />
+      <label>
+        Item Name
+        <input value={value.item_name} onChange={(event) => onChange({ ...value, item_name: event.target.value })} placeholder="Laptop Charger" />
+      </label>
+      <label>
+        Category
         <input
-          type="number"
-          min="0"
-          value={value.quantity}
-          onChange={(event) => onChange({ ...value, quantity: Number(event.target.value) })}
-          placeholder="Initial quantity"
+          value={value.category_name}
+          onChange={(event) => onChange({ ...value, category_name: event.target.value })}
+          placeholder="Optional"
         />
+      </label>
+      <div className="form-row">
+        <label>
+          Unit
+          <input value={value.unit} onChange={(event) => onChange({ ...value, unit: event.target.value })} placeholder="pcs" />
+        </label>
+        <label>
+          Minimum Stock
+          <input
+            type="number"
+            min="0"
+            value={value.minimum_stock}
+            onChange={(event) => onChange({ ...value, minimum_stock: Number(event.target.value) })}
+          />
+        </label>
       </div>
-      <input
-        type="number"
-        min="0"
-        value={value.minimum_stock}
-        onChange={(event) => onChange({ ...value, minimum_stock: Number(event.target.value) })}
-        placeholder="Minimum stock"
-      />
-      <textarea
-        value={value.description}
-        onChange={(event) => onChange({ ...value, description: event.target.value })}
-        placeholder="Description"
-      />
-      <button type="submit">Create Item</button>
+      <label>
+        Description
+        <textarea
+          value={value.description}
+          onChange={(event) => onChange({ ...value, description: event.target.value })}
+          placeholder="Optional notes about this item"
+        />
+      </label>
+      <button type="submit">Create Item Master</button>
     </form>
   );
 }

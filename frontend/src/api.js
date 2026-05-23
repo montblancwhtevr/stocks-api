@@ -1,31 +1,15 @@
-const defaultBaseUrl = import.meta.env.VITE_API_BASE_URL || 'https://api.hiada.my.id';
-
-export function getSettings() {
-  return {
-    apiBaseUrl: localStorage.getItem('apiBaseUrl') || defaultBaseUrl,
-    token: localStorage.getItem('apiToken') || '',
-  };
-}
-
-export function saveSettings(settings) {
-  localStorage.setItem('apiBaseUrl', settings.apiBaseUrl.replace(/\/+$/, ''));
-  localStorage.setItem('apiToken', settings.token);
-}
-
-export function clearToken() {
-  localStorage.removeItem('apiToken');
-}
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'https://api.hiada.my.id').replace(/\/+$/, '');
+export const API_TOKEN = import.meta.env.VITE_API_TOKEN || '';
 
 export async function apiRequest(path, options = {}) {
-  const { apiBaseUrl, token } = getSettings();
   const headers = {
     Accept: 'application/json',
     ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}),
     ...(options.headers || {}),
   };
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
   });

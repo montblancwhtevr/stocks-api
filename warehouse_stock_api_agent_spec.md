@@ -157,6 +157,8 @@ Example category values:
 
 Stores item master data and current stock quantity.
 
+Item quantity must start from `0` when item master data is created. Do not allow admin to set or edit quantity directly from the item form/API. All quantity changes must come from stock in or stock out transactions.
+
 ```sql
 CREATE TABLE db_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -548,7 +550,6 @@ Request:
   "item_name": "A4 Paper",
   "category_name": "Office Supplies",
   "unit": "rim",
-  "quantity": 0,
   "minimum_stock": 5,
   "description": "A4 paper for office usage"
 }
@@ -987,7 +988,7 @@ Recommended for version 1:
 - category_name is optional
 - category_name max length 150
 - unit is optional, default `pcs`
-- quantity must be >= 0
+- quantity is managed by stock in/out only
 - minimum_stock must be >= 0
 
 ### Stock In
