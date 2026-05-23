@@ -54,6 +54,7 @@ final class ReportController extends BaseController
 
         $sql = 'SELECT
                     m.id,
+                    m.stock_out_transaction_id,
                     i.item_name,
                     m.movement_type,
                     m.quantity,

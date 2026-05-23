@@ -189,6 +189,7 @@ Main transaction table for stock in and stock out.
 CREATE TABLE db_stock_movements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id INTEGER NOT NULL,
+    stock_out_transaction_id INTEGER NULL,
     movement_type VARCHAR(20) NOT NULL,
     quantity INTEGER NOT NULL,
     stock_before INTEGER NOT NULL,
@@ -203,6 +204,7 @@ CREATE TABLE db_stock_movements (
     created_by VARCHAR(100) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (item_id) REFERENCES db_items(id),
+    FOREIGN KEY (stock_out_transaction_id) REFERENCES db_stock_out_transactions(id),
     FOREIGN KEY (department_id) REFERENCES db_departments(id)
 );
 ```
@@ -229,6 +231,7 @@ For stock out:
 - purpose is recommended
 - requested_at should be filled if the admin needs to track when the item was requested
 - received_at can be null
+- stock_out_transaction_id should be filled when the stock out was submitted in bulk
 
 Date meaning:
 
@@ -245,7 +248,70 @@ Example data:
 
 ---
 
-## 5.5 Table: db_activity_logs
+## 5.5 Table: db_stock_out_transactions
+
+Stores the header record for a stock-out request that contains multiple item lines.
+
+Use this table when one requester or department asks for many items at the same time.
+
+```sql
+CREATE TABLE db_stock_out_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_no VARCHAR(100) NOT NULL UNIQUE,
+    requester_name VARCHAR(150) NOT NULL,
+    department_id INTEGER NULL,
+    purpose TEXT NULL,
+    requested_at DATETIME NULL,
+    notes TEXT NULL,
+    created_by VARCHAR(100) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES db_departments(id)
+);
+```
+
+Example:
+
+| id | transaction_no | requester_name | department_id | requested_at |
+|---:|----------------|----------------|--------------:|--------------|
+| 1 | SO-20260523-001 | Budi | 1 | 2026-05-23 10:00:00 |
+
+---
+
+## 5.6 Table: db_stock_out_transaction_items
+
+Stores item lines for a grouped stock-out transaction.
+
+```sql
+CREATE TABLE db_stock_out_transaction_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL,
+    stock_before INTEGER NOT NULL,
+    stock_after INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (transaction_id) REFERENCES db_stock_out_transactions(id),
+    FOREIGN KEY (item_id) REFERENCES db_items(id)
+);
+```
+
+Example:
+
+| id | transaction_id | item_id | quantity | stock_before | stock_after |
+|---:|---------------:|--------:|---------:|-------------:|------------:|
+| 1 | 1 | 1 | 2 | 15 | 13 |
+| 2 | 1 | 2 | 5 | 30 | 25 |
+
+Important:
+
+- Backend must validate all item stock first.
+- If any item has insufficient stock, reject the whole transaction.
+- Do not partially process stock out.
+- Also insert one `db_stock_movements` row per item line for reporting.
+
+---
+
+## 5.7 Table: db_activity_logs
 
 Stores admin activity logs for create, update, delete, and important stock actions.
 
@@ -274,6 +340,7 @@ UPDATE
 DELETE
 STOCK_IN
 STOCK_OUT
+STOCK_OUT_BULK
 LOGIN
 LOGOUT
 ```
@@ -283,6 +350,7 @@ Data format:
 - `old_data` stores JSON before update/delete
 - `new_data` stores JSON after create/update
 - For stock in/out, log the affected `db_stock_movements.id` as `record_id`
+- For bulk stock out, log the affected `db_stock_out_transactions.id` as `record_id`
 
 Example data:
 
@@ -301,7 +369,9 @@ For version 1, use only these tables:
 1. `db_departments`
 2. `db_items`
 3. `db_stock_movements`
-4. `db_activity_logs`
+4. `db_stock_out_transactions`
+5. `db_stock_out_transaction_items`
+6. `db_activity_logs`
 
 Reason:
 
@@ -501,6 +571,8 @@ Response:
 POST /api/stock/out
 ```
 
+This endpoint records stock out for one item only.
+
 Request:
 
 ```json
@@ -537,6 +609,65 @@ If stock is not enough:
   "message": "Insufficient stock"
 }
 ```
+
+---
+
+### Bulk Stock Out
+
+```http
+POST /api/stock/out-bulk
+```
+
+Use this endpoint for the normal admin workflow when one requester or department asks for multiple items at the same time.
+
+Request:
+
+```json
+{
+  "requester_name": "Budi",
+  "department_id": 1,
+  "purpose": "Monthly office supplies request",
+  "requested_at": "2026-05-23 10:00:00",
+  "notes": "Recorded by admin",
+  "created_by": "admin",
+  "items": [
+    {
+      "item_id": 1,
+      "quantity": 2
+    },
+    {
+      "item_id": 2,
+      "quantity": 5
+    }
+  ]
+}
+```
+
+Backend process:
+
+1. Validate requester_name is not empty.
+2. Validate department exists if department_id is provided.
+3. Validate items array is not empty.
+4. Validate every item exists.
+5. Validate every quantity > 0.
+6. Validate every item has enough stock.
+7. Create one `db_stock_out_transactions` header.
+8. Create one `db_stock_out_transaction_items` row per item.
+9. Create one `db_stock_movements` row per item.
+10. Update each `db_items.quantity`.
+11. Commit all changes in one database transaction.
+
+If any item has insufficient stock, reject the whole transaction and do not update any item quantity.
+
+---
+
+### List Stock Out Transactions
+
+```http
+GET /api/stock/out-transactions
+```
+
+Shows grouped stock-out transactions.
 
 ---
 
@@ -764,6 +895,16 @@ Recommended for version 1:
 - requester_name is required
 - requested_at is optional, format `YYYY-MM-DD HH:MM:SS`
 - quantity must not exceed current stock
+
+### Bulk Stock Out
+
+- requester_name is required
+- department_id is optional, but must exist if provided
+- requested_at is optional, format `YYYY-MM-DD HH:MM:SS`
+- items array is required
+- each item line must have item_id
+- each item line must have quantity > 0
+- every requested quantity must not exceed current stock
 
 ---
 

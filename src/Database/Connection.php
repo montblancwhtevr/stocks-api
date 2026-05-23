@@ -50,6 +50,23 @@ final class Connection
         if ($schema !== false) {
             $pdo->exec($schema);
         }
+
+        self::addColumnIfMissing($pdo, 'db_stock_movements', 'stock_out_transaction_id', 'INTEGER NULL');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_stock_movements_stock_out_transaction_id ON db_stock_movements(stock_out_transaction_id)');
+    }
+
+    private static function addColumnIfMissing(PDO $pdo, string $table, string $column, string $definition): void
+    {
+        $stmt = $pdo->query('PRAGMA table_info(' . $table . ')');
+        $columns = $stmt === false ? [] : $stmt->fetchAll();
+
+        foreach ($columns as $existingColumn) {
+            if (($existingColumn['name'] ?? '') === $column) {
+                return;
+            }
+        }
+
+        $pdo->exec('ALTER TABLE ' . $table . ' ADD COLUMN ' . $column . ' ' . $definition);
     }
 
     private static function isAbsolutePath(string $path): bool

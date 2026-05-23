@@ -49,8 +49,28 @@ Authorization: Bearer change_this_secret_token
 - `DELETE /api/items/{id}`
 - `POST /api/stock/in`
 - `POST /api/stock/out`
+- `POST /api/stock/out-bulk`
+- `GET /api/stock/out-transactions`
 - `GET /api/stock/movements`
 - `GET /api/reports/current-stock`
 - `GET /api/reports/stock-movement`
 - `GET /api/reports/stock-out-by-department`
 - `GET /api/activity-logs`
+
+## Frontend
+
+A React admin UI is available in `frontend/`.
+
+Run locally:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Build for deployment:
+
+```bash
+npm run build
+```

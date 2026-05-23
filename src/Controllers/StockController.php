@@ -36,6 +36,7 @@ final class StockController extends BaseController
 
             $movement = $this->insertMovement([
                 ':item_id' => $itemId,
+                ':stock_out_transaction_id' => null,
                 ':movement_type' => 'IN',
                 ':quantity' => $quantity,
                 ':stock_before' => $stockBefore,
@@ -117,6 +118,7 @@ final class StockController extends BaseController
 
             $movement = $this->insertMovement([
                 ':item_id' => $itemId,
+                ':stock_out_transaction_id' => null,
                 ':movement_type' => 'OUT',
                 ':quantity' => $quantity,
                 ':stock_before' => $stockBefore,
@@ -148,6 +150,143 @@ final class StockController extends BaseController
                 $this->db->rollBack();
             }
             ResponseHelper::error('Failed to record stock out', 500);
+        }
+    }
+
+    public function stockOutBulk(): void
+    {
+        $data = $this->input();
+        $requesterName = $this->stringOrNull($data, 'requester_name');
+        $departmentId = $this->intValue($data, 'department_id');
+        $items = $data['items'] ?? [];
+
+        if ($requesterName === null) {
+            ResponseHelper::error('requester_name is required');
+            return;
+        }
+
+        if ($departmentId > 0 && $this->findById('db_departments', $departmentId) === null) {
+            ResponseHelper::error('Department not found', 404);
+            return;
+        }
+
+        if (!is_array($items) || count($items) === 0) {
+            ResponseHelper::error('items are required');
+            return;
+        }
+
+        $normalizedItems = [];
+        $requestedByItem = [];
+
+        foreach ($items as $line) {
+            if (!is_array($line)) {
+                ResponseHelper::error('Each item line must be an object');
+                return;
+            }
+
+            $itemId = (int) ($line['item_id'] ?? 0);
+            $quantity = (int) ($line['quantity'] ?? 0);
+
+            if ($itemId <= 0 || $quantity <= 0) {
+                ResponseHelper::error('Each item must have item_id and quantity > 0');
+                return;
+            }
+
+            $requestedByItem[$itemId] = ($requestedByItem[$itemId] ?? 0) + $quantity;
+        }
+
+        foreach ($requestedByItem as $itemId => $quantity) {
+            $item = $this->findById('db_items', (int) $itemId);
+            if ($item === null) {
+                ResponseHelper::error('Item not found: ' . $itemId, 404);
+                return;
+            }
+
+            $stockBefore = (int) $item['quantity'];
+            if ($quantity > $stockBefore) {
+                ResponseHelper::error('Insufficient stock for ' . $item['item_name'], 409);
+                return;
+            }
+
+            $normalizedItems[] = [
+                'item' => $item,
+                'item_id' => (int) $itemId,
+                'quantity' => (int) $quantity,
+                'stock_before' => $stockBefore,
+                'stock_after' => $stockBefore - (int) $quantity,
+            ];
+        }
+
+        try {
+            $this->db->beginTransaction();
+
+            $transactionNo = $this->generateTransactionNo();
+            $transaction = $this->insertStockOutTransaction([
+                ':transaction_no' => $transactionNo,
+                ':requester_name' => $requesterName,
+                ':department_id' => $departmentId > 0 ? $departmentId : null,
+                ':purpose' => $this->stringOrNull($data, 'purpose'),
+                ':requested_at' => $this->stringOrNull($data, 'requested_at'),
+                ':notes' => $this->stringOrNull($data, 'notes'),
+                ':created_by' => $this->stringOrNull($data, 'created_by'),
+            ]);
+
+            $movementRows = [];
+            $lineRows = [];
+
+            foreach ($normalizedItems as $line) {
+                $this->insertStockOutTransactionItem([
+                    ':transaction_id' => (int) $transaction['id'],
+                    ':item_id' => $line['item_id'],
+                    ':quantity' => $line['quantity'],
+                    ':stock_before' => $line['stock_before'],
+                    ':stock_after' => $line['stock_after'],
+                ]);
+
+                $lineRows[] = [
+                    'item_id' => $line['item_id'],
+                    'item_name' => $line['item']['item_name'],
+                    'quantity' => $line['quantity'],
+                    'stock_before' => $line['stock_before'],
+                    'stock_after' => $line['stock_after'],
+                ];
+
+                $movement = $this->insertMovement([
+                    ':item_id' => $line['item_id'],
+                    ':stock_out_transaction_id' => (int) $transaction['id'],
+                    ':movement_type' => 'OUT',
+                    ':quantity' => $line['quantity'],
+                    ':stock_before' => $line['stock_before'],
+                    ':stock_after' => $line['stock_after'],
+                    ':requester_name' => $requesterName,
+                    ':department_id' => $departmentId > 0 ? $departmentId : null,
+                    ':purpose' => $this->stringOrNull($data, 'purpose'),
+                    ':notes' => $this->stringOrNull($data, 'notes'),
+                    ':requested_at' => $this->stringOrNull($data, 'requested_at'),
+                    ':received_at' => null,
+                    ':created_by' => $this->stringOrNull($data, 'created_by'),
+                ]);
+                $movementRows[] = $movement;
+
+                $this->updateItemQuantity($line['item_id'], $line['stock_after']);
+            }
+
+            $payload = [
+                'transaction' => $transaction,
+                'items' => $lineRows,
+                'movements' => $movementRows,
+            ];
+
+            $this->logActivity('STOCK_OUT_BULK', 'db_stock_out_transactions', (int) $transaction['id'], null, $payload, $this->stringOrNull($data, 'created_by'));
+
+            $this->db->commit();
+
+            ResponseHelper::success($payload, 'Bulk stock out recorded successfully', 201);
+        } catch (\Throwable $exception) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            ResponseHelper::error('Failed to record bulk stock out', 500);
         }
     }
 
@@ -193,18 +332,73 @@ final class StockController extends BaseController
         ResponseHelper::success($stmt->fetchAll());
     }
 
+    public function stockOutTransactions(): void
+    {
+        $sql = 'SELECT
+                    t.id,
+                    t.transaction_no,
+                    t.requester_name,
+                    t.department_id,
+                    d.department_name,
+                    t.purpose,
+                    t.requested_at,
+                    t.notes,
+                    t.created_by,
+                    t.created_at,
+                    COUNT(ti.id) AS total_lines,
+                    COALESCE(SUM(ti.quantity), 0) AS total_quantity
+                FROM db_stock_out_transactions t
+                LEFT JOIN db_departments d ON d.id = t.department_id
+                LEFT JOIN db_stock_out_transaction_items ti ON ti.transaction_id = t.id
+                GROUP BY t.id
+                ORDER BY t.created_at DESC, t.id DESC';
+
+        $stmt = $this->db->query($sql);
+        ResponseHelper::success($stmt->fetchAll());
+    }
+
     private function insertMovement(array $params): array
     {
         $stmt = $this->db->prepare(
             'INSERT INTO db_stock_movements
-             (item_id, movement_type, quantity, stock_before, stock_after, requester_name, department_id, purpose, notes, requested_at, received_at, created_by)
+             (item_id, stock_out_transaction_id, movement_type, quantity, stock_before, stock_after, requester_name, department_id, purpose, notes, requested_at, received_at, created_by)
              VALUES
-             (:item_id, :movement_type, :quantity, :stock_before, :stock_after, :requester_name, :department_id, :purpose, :notes, :requested_at, :received_at, :created_by)'
+             (:item_id, :stock_out_transaction_id, :movement_type, :quantity, :stock_before, :stock_after, :requester_name, :department_id, :purpose, :notes, :requested_at, :received_at, :created_by)'
         );
         $stmt->execute($params);
 
         $id = (int) $this->db->lastInsertId();
         return $this->findById('db_stock_movements', $id);
+    }
+
+    private function insertStockOutTransaction(array $params): array
+    {
+        $stmt = $this->db->prepare(
+            'INSERT INTO db_stock_out_transactions
+             (transaction_no, requester_name, department_id, purpose, requested_at, notes, created_by)
+             VALUES
+             (:transaction_no, :requester_name, :department_id, :purpose, :requested_at, :notes, :created_by)'
+        );
+        $stmt->execute($params);
+
+        $id = (int) $this->db->lastInsertId();
+        return $this->findById('db_stock_out_transactions', $id);
+    }
+
+    private function insertStockOutTransactionItem(array $params): void
+    {
+        $stmt = $this->db->prepare(
+            'INSERT INTO db_stock_out_transaction_items
+             (transaction_id, item_id, quantity, stock_before, stock_after)
+             VALUES
+             (:transaction_id, :item_id, :quantity, :stock_before, :stock_after)'
+        );
+        $stmt->execute($params);
+    }
+
+    private function generateTransactionNo(): string
+    {
+        return 'SO-' . date('Ymd-His') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6));
     }
 
     private function updateItemQuantity(int $itemId, int $quantity): void
@@ -218,6 +412,7 @@ final class StockController extends BaseController
         return 'SELECT
                     m.id,
                     m.item_id,
+                    m.stock_out_transaction_id,
                     i.item_name,
                     m.movement_type,
                     m.quantity,

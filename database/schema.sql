@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS db_items (
 CREATE TABLE IF NOT EXISTS db_stock_movements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id INTEGER NOT NULL,
+    stock_out_transaction_id INTEGER NULL,
     movement_type VARCHAR(20) NOT NULL,
     quantity INTEGER NOT NULL,
     stock_before INTEGER NOT NULL,
@@ -36,7 +37,33 @@ CREATE TABLE IF NOT EXISTS db_stock_movements (
     created_by VARCHAR(100) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (item_id) REFERENCES db_items(id),
+    FOREIGN KEY (stock_out_transaction_id) REFERENCES db_stock_out_transactions(id),
     FOREIGN KEY (department_id) REFERENCES db_departments(id)
+);
+
+CREATE TABLE IF NOT EXISTS db_stock_out_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_no VARCHAR(100) NOT NULL UNIQUE,
+    requester_name VARCHAR(150) NOT NULL,
+    department_id INTEGER NULL,
+    purpose TEXT NULL,
+    requested_at DATETIME NULL,
+    notes TEXT NULL,
+    created_by VARCHAR(100) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (department_id) REFERENCES db_departments(id)
+);
+
+CREATE TABLE IF NOT EXISTS db_stock_out_transaction_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL,
+    stock_before INTEGER NOT NULL,
+    stock_after INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (transaction_id) REFERENCES db_stock_out_transactions(id),
+    FOREIGN KEY (item_id) REFERENCES db_items(id)
 );
 
 CREATE TABLE IF NOT EXISTS db_activity_logs (
@@ -59,3 +86,7 @@ CREATE INDEX IF NOT EXISTS idx_stock_movements_movement_date ON db_stock_movemen
 CREATE INDEX IF NOT EXISTS idx_stock_movements_requested_at ON db_stock_movements(requested_at);
 CREATE INDEX IF NOT EXISTS idx_items_category_name ON db_items(category_name);
 CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON db_activity_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_stock_out_transactions_requested_at ON db_stock_out_transactions(requested_at);
+CREATE INDEX IF NOT EXISTS idx_stock_out_transactions_department_id ON db_stock_out_transactions(department_id);
+CREATE INDEX IF NOT EXISTS idx_stock_out_transaction_items_transaction_id ON db_stock_out_transaction_items(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_stock_out_transaction_items_item_id ON db_stock_out_transaction_items(item_id);
