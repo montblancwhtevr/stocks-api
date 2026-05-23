@@ -189,6 +189,7 @@ Main transaction table for stock in and stock out.
 CREATE TABLE db_stock_movements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     item_id INTEGER NOT NULL,
+    stock_in_transaction_id INTEGER NULL,
     stock_out_transaction_id INTEGER NULL,
     movement_type VARCHAR(20) NOT NULL,
     quantity INTEGER NOT NULL,
@@ -204,6 +205,7 @@ CREATE TABLE db_stock_movements (
     created_by VARCHAR(100) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (item_id) REFERENCES db_items(id),
+    FOREIGN KEY (stock_in_transaction_id) REFERENCES db_stock_in_transactions(id),
     FOREIGN KEY (stock_out_transaction_id) REFERENCES db_stock_out_transactions(id),
     FOREIGN KEY (department_id) REFERENCES db_departments(id)
 );
@@ -223,6 +225,7 @@ For stock in:
 - purpose can be null
 - requested_at can be null
 - received_at should be filled if the admin needs to track when the item arrived
+- stock_in_transaction_id should be filled when the stock in was submitted in bulk
 
 For stock out:
 
@@ -248,7 +251,56 @@ Example data:
 
 ---
 
-## 5.5 Table: db_stock_out_transactions
+## 5.5 Table: db_stock_in_transactions
+
+Stores the header record for a stock-in delivery that contains multiple item lines.
+
+```sql
+CREATE TABLE db_stock_in_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_no VARCHAR(100) NOT NULL UNIQUE,
+    source_name VARCHAR(150) NULL,
+    received_at DATETIME NULL,
+    notes TEXT NULL,
+    created_by VARCHAR(100) NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+Example:
+
+| id | transaction_no | source_name | received_at |
+|---:|----------------|-------------|-------------|
+| 1 | SI-20260523-001 | Supplier ABC | 2026-05-23 14:00:00 |
+
+---
+
+## 5.6 Table: db_stock_in_transaction_items
+
+Stores item lines for a grouped stock-in transaction.
+
+```sql
+CREATE TABLE db_stock_in_transaction_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transaction_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL,
+    stock_before INTEGER NOT NULL,
+    stock_after INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (transaction_id) REFERENCES db_stock_in_transactions(id),
+    FOREIGN KEY (item_id) REFERENCES db_items(id)
+);
+```
+
+Important:
+
+- Also insert one `db_stock_movements` row per item line for reporting.
+- Update all item quantities in one database transaction.
+
+---
+
+## 5.7 Table: db_stock_out_transactions
 
 Stores the header record for a stock-out request that contains multiple item lines.
 
@@ -277,7 +329,7 @@ Example:
 
 ---
 
-## 5.6 Table: db_stock_out_transaction_items
+## 5.8 Table: db_stock_out_transaction_items
 
 Stores item lines for a grouped stock-out transaction.
 
@@ -311,7 +363,7 @@ Important:
 
 ---
 
-## 5.7 Table: db_activity_logs
+## 5.9 Table: db_activity_logs
 
 Stores admin activity logs for create, update, delete, and important stock actions.
 
@@ -339,6 +391,7 @@ CREATE
 UPDATE
 DELETE
 STOCK_IN
+STOCK_IN_BULK
 STOCK_OUT
 STOCK_OUT_BULK
 LOGIN
@@ -350,6 +403,7 @@ Data format:
 - `old_data` stores JSON before update/delete
 - `new_data` stores JSON after create/update
 - For stock in/out, log the affected `db_stock_movements.id` as `record_id`
+- For bulk stock in, log the affected `db_stock_in_transactions.id` as `record_id`
 - For bulk stock out, log the affected `db_stock_out_transactions.id` as `record_id`
 
 Example data:
@@ -369,9 +423,11 @@ For version 1, use only these tables:
 1. `db_departments`
 2. `db_items`
 3. `db_stock_movements`
-4. `db_stock_out_transactions`
-5. `db_stock_out_transaction_items`
-6. `db_activity_logs`
+4. `db_stock_in_transactions`
+5. `db_stock_in_transaction_items`
+6. `db_stock_out_transactions`
+7. `db_stock_out_transaction_items`
+8. `db_activity_logs`
 
 Reason:
 
@@ -524,6 +580,8 @@ Do not allow deleting items that already have stock movement history, unless sof
 POST /api/stock/in
 ```
 
+This endpoint records stock in for one item only.
+
 Request:
 
 ```json
@@ -562,6 +620,58 @@ Response:
   }
 }
 ```
+
+---
+
+### Bulk Stock In
+
+```http
+POST /api/stock/in-bulk
+```
+
+Use this endpoint for the normal admin workflow when a delivery or purchase contains multiple items.
+
+Request:
+
+```json
+{
+  "source_name": "Supplier ABC",
+  "received_at": "2026-05-23 14:00:00",
+  "notes": "Invoice INV-001",
+  "created_by": "admin",
+  "items": [
+    {
+      "item_id": 1,
+      "quantity": 10
+    },
+    {
+      "item_id": 2,
+      "quantity": 20
+    }
+  ]
+}
+```
+
+Backend process:
+
+1. Validate items array is not empty.
+2. Validate every item exists.
+3. Validate every quantity > 0.
+4. Create one `db_stock_in_transactions` header.
+5. Create one `db_stock_in_transaction_items` row per item.
+6. Create one `db_stock_movements` row per item.
+7. Update each `db_items.quantity`.
+8. Commit all changes in one database transaction.
+
+---
+
+### List Stock In Transactions
+
+```http
+GET /api/stock/in-transactions
+```
+
+Shows grouped stock-in transactions.
 
 ---
 
@@ -886,6 +996,14 @@ Recommended for version 1:
 - quantity is required
 - quantity must be > 0
 - received_at is optional, format `YYYY-MM-DD HH:MM:SS`
+
+### Bulk Stock In
+
+- source_name is optional
+- received_at is optional, format `YYYY-MM-DD HH:MM:SS`
+- items array is required
+- each item line must have item_id
+- each item line must have quantity > 0
 
 ### Stock Out
 

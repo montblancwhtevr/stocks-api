@@ -109,6 +109,11 @@ try {
         exit;
     }
 
+    if ($method === 'POST' && $path === '/api/stock/in-bulk') {
+        $stockController->stockInBulk();
+        exit;
+    }
+
     if ($method === 'POST' && $path === '/api/stock/out') {
         $stockController->stockOut();
         exit;
@@ -121,6 +126,11 @@ try {
 
     if ($method === 'GET' && $path === '/api/stock/movements') {
         $stockController->movements();
+        exit;
+    }
+
+    if ($method === 'GET' && $path === '/api/stock/in-transactions') {
+        $stockController->stockInTransactions();
         exit;
     }
 

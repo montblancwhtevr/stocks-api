@@ -267,6 +267,19 @@ label {
   grid-template-columns: minmax(180px, 1fr) 120px auto;
 }
 
+.datetime-24 {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 76px auto 76px;
+  gap: 8px;
+  align-items: center;
+}
+
+.datetime-24 span {
+  color: #65748c;
+  font-size: 18px;
+  font-weight: 800;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -319,7 +332,12 @@ td {
   .grid-two,
   .grid-two.wide-right,
   .line-items-header,
-  .line-item {
+  .line-item,
+  .datetime-24 {
     grid-template-columns: 1fr;
+  }
+
+  .datetime-24 span {
+    display: none;
   }
 }

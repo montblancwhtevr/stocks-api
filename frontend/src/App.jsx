@@ -31,6 +31,45 @@ const emptyStockOut = {
   items: [{ item_id: '', quantity: 1 }],
 };
 
+const emptyStockIn = {
+  source_name: '',
+  received_at: '',
+  notes: '',
+  created_by: 'admin',
+  items: [{ item_id: '', quantity: 1 }],
+};
+
+function toApiDateTime(value) {
+  if (!value) {
+    return '';
+  }
+
+  return value.length === 16 ? `${value.replace('T', ' ')}:00` : value.replace('T', ' ');
+}
+
+function fromDateTimeParts(date, hour, minute) {
+  if (!date) {
+    return '';
+  }
+
+  return `${date}T${hour || '00'}:${minute || '00'}`;
+}
+
+function toDateTimeParts(value) {
+  if (!value) {
+    return { date: '', hour: '00', minute: '00' };
+  }
+
+  const [date, time = '00:00'] = value.split('T');
+  const [hour = '00', minute = '00'] = time.split(':');
+
+  return {
+    date,
+    hour: hour.padStart(2, '0'),
+    minute: minute.padStart(2, '0'),
+  };
+}
+
 export default function App() {
   const [settings, setSettings] = useState(getSettings);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -44,7 +83,7 @@ export default function App() {
   const [stockByDepartment, setStockByDepartment] = useState([]);
   const [departmentName, setDepartmentName] = useState('');
   const [itemForm, setItemForm] = useState(emptyItem);
-  const [stockIn, setStockIn] = useState({ item_id: '', quantity: 1, received_at: '', notes: '', created_by: 'admin' });
+  const [stockIn, setStockIn] = useState(emptyStockIn);
   const [stockOut, setStockOut] = useState(emptyStockOut);
 
   const isReady = settings.apiBaseUrl && settings.token;
@@ -142,13 +181,20 @@ export default function App() {
   async function submitStockIn(event) {
     event.preventDefault();
     await run(async () => {
-      await apiRequest('/api/stock/in', {
+      await apiRequest('/api/stock/in-bulk', {
         method: 'POST',
-        body: JSON.stringify({ ...stockIn, item_id: Number(stockIn.item_id), quantity: Number(stockIn.quantity) }),
+        body: JSON.stringify({
+          ...stockIn,
+          received_at: toApiDateTime(stockIn.received_at),
+          items: stockIn.items.map((line) => ({
+            item_id: Number(line.item_id),
+            quantity: Number(line.quantity),
+          })),
+        }),
       });
-      setStockIn({ item_id: '', quantity: 1, received_at: '', notes: '', created_by: 'admin' });
+      setStockIn(emptyStockIn);
       await refreshAll();
-    }, 'Stock in recorded');
+    }, 'Bulk stock in recorded');
   }
 
   async function submitStockOut(event) {
@@ -159,6 +205,7 @@ export default function App() {
         body: JSON.stringify({
           ...stockOut,
           department_id: stockOut.department_id ? Number(stockOut.department_id) : null,
+          requested_at: toApiDateTime(stockOut.requested_at),
           items: stockOut.items.map((line) => ({
             item_id: Number(line.item_id),
             quantity: Number(line.quantity),
@@ -431,13 +478,65 @@ function ItemForm({ value, onChange, onSubmit }) {
 }
 
 function StockInForm({ items, value, onChange, onSubmit }) {
+  function updateLine(index, changes) {
+    onChange({
+      ...value,
+      items: value.items.map((line, lineIndex) => (lineIndex === index ? { ...line, ...changes } : line)),
+    });
+  }
+
+  function addLine() {
+    onChange({
+      ...value,
+      items: [...value.items, { item_id: '', quantity: 1 }],
+    });
+  }
+
+  function removeLine(index) {
+    if (value.items.length === 1) {
+      return;
+    }
+
+    onChange({
+      ...value,
+      items: value.items.filter((_, lineIndex) => lineIndex !== index),
+    });
+  }
+
   return (
-    <form className="narrow-form" onSubmit={onSubmit}>
-      <SelectItem items={items} value={value.item_id} onChange={(item_id) => onChange({ ...value, item_id })} />
-      <input type="number" min="1" value={value.quantity} onChange={(event) => onChange({ ...value, quantity: event.target.value })} />
-      <input value={value.received_at} onChange={(event) => onChange({ ...value, received_at: event.target.value })} placeholder="YYYY-MM-DD HH:MM:SS" />
+    <form onSubmit={onSubmit}>
+      <input
+        value={value.source_name}
+        onChange={(event) => onChange({ ...value, source_name: event.target.value })}
+        placeholder="Source or supplier optional"
+      />
+      <DateTime24 label="Received At" value={value.received_at} onChange={(received_at) => onChange({ ...value, received_at })} />
       <textarea value={value.notes} onChange={(event) => onChange({ ...value, notes: event.target.value })} placeholder="Notes" />
-      <button type="submit">Record Stock In</button>
+
+      <div className="line-items">
+        <div className="line-items-header">
+          <strong>Received Items</strong>
+          <button type="button" className="secondary" onClick={addLine}>
+            Add Item
+          </button>
+        </div>
+        {value.items.map((line, index) => (
+          <div className="line-item" key={index}>
+            <SelectItem items={items} value={line.item_id} onChange={(item_id) => updateLine(index, { item_id })} />
+            <input
+              type="number"
+              min="1"
+              value={line.quantity}
+              onChange={(event) => updateLine(index, { quantity: event.target.value })}
+            />
+            <button type="button" className="danger" onClick={() => removeLine(index)} disabled={value.items.length === 1}>
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button type="submit">Record Bulk Stock In</button>
     </form>
   );
 }
@@ -483,11 +582,7 @@ function StockOutForm({ items, departments, value, onChange, onSubmit }) {
           </option>
         ))}
       </select>
-      <input
-        value={value.requested_at}
-        onChange={(event) => onChange({ ...value, requested_at: event.target.value })}
-        placeholder="YYYY-MM-DD HH:MM:SS"
-      />
+      <DateTime24 label="Requested At" value={value.requested_at} onChange={(requested_at) => onChange({ ...value, requested_at })} />
       <textarea value={value.purpose} onChange={(event) => onChange({ ...value, purpose: event.target.value })} placeholder="Purpose" />
       <textarea value={value.notes} onChange={(event) => onChange({ ...value, notes: event.target.value })} placeholder="Notes" />
 
@@ -529,5 +624,43 @@ function SelectItem({ items, value, onChange }) {
         </option>
       ))}
     </select>
+  );
+}
+
+function DateTime24({ label, value, onChange }) {
+  const parts = toDateTimeParts(value);
+  const hours = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'));
+  const minutes = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'));
+
+  function update(nextParts) {
+    onChange(fromDateTimeParts(nextParts.date, nextParts.hour, nextParts.minute));
+  }
+
+  return (
+    <label>
+      {label}
+      <div className="datetime-24">
+        <input
+          type="date"
+          value={parts.date}
+          onChange={(event) => update({ ...parts, date: event.target.value })}
+        />
+        <select value={parts.hour} onChange={(event) => update({ ...parts, hour: event.target.value })} aria-label={`${label} hour`}>
+          {hours.map((hour) => (
+            <option key={hour} value={hour}>
+              {hour}
+            </option>
+          ))}
+        </select>
+        <span>:</span>
+        <select value={parts.minute} onChange={(event) => update({ ...parts, minute: event.target.value })} aria-label={`${label} minute`}>
+          {minutes.map((minute) => (
+            <option key={minute} value={minute}>
+              {minute}
+            </option>
+          ))}
+        </select>
+      </div>
+    </label>
   );
 }

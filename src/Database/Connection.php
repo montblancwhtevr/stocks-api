@@ -51,7 +51,9 @@ final class Connection
             $pdo->exec($schema);
         }
 
+        self::addColumnIfMissing($pdo, 'db_stock_movements', 'stock_in_transaction_id', 'INTEGER NULL');
         self::addColumnIfMissing($pdo, 'db_stock_movements', 'stock_out_transaction_id', 'INTEGER NULL');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_stock_movements_stock_in_transaction_id ON db_stock_movements(stock_in_transaction_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_stock_movements_stock_out_transaction_id ON db_stock_movements(stock_out_transaction_id)');
     }
 

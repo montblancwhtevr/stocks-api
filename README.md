@@ -48,6 +48,8 @@ Authorization: Bearer change_this_secret_token
 - `PUT /api/items/{id}`
 - `DELETE /api/items/{id}`
 - `POST /api/stock/in`
+- `POST /api/stock/in-bulk`
+- `GET /api/stock/in-transactions`
 - `POST /api/stock/out`
 - `POST /api/stock/out-bulk`
 - `GET /api/stock/out-transactions`
