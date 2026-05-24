@@ -63,6 +63,10 @@ button.secondary:hover {
   background: #e0e7ef;
 }
 
+.logout-button {
+  width: 100%;
+}
+
 button.danger {
   color: var(--red);
   border: 0;
@@ -270,6 +274,62 @@ label {
   border-color: var(--red);
   color: var(--red);
   background: var(--red-soft);
+}
+
+.login-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(320px, 440px);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.login-copy {
+  display: grid;
+  align-content: center;
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 34px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.58)),
+    repeating-linear-gradient(90deg, #edf2f7 0, #edf2f7 1px, transparent 1px, transparent 44px),
+    repeating-linear-gradient(0deg, #e5ebf2 0, #e5ebf2 1px, transparent 1px, transparent 44px),
+    #f8fafc;
+}
+
+.login-copy span {
+  color: var(--blue);
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.login-copy h2 {
+  max-width: 520px;
+  margin: 14px 0 12px;
+  color: var(--ink);
+  font-size: 42px;
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+.login-copy p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.login-panel {
+  align-self: center;
+  margin-bottom: 0;
+}
+
+.login-panel form {
+  margin: 24px;
 }
 
 .metrics {
@@ -520,6 +580,7 @@ tbody tr:hover {
   .metrics,
   .grid-two,
   .grid-two.wide-right,
+  .login-layout,
   .filters,
   .line-items-header,
   .line-item,

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { API_BASE_URL, API_TOKEN, apiRequest } from './api.js';
+import { API_BASE_URL, apiRequest, clearSession, getStoredSession, loginRequest, saveSession } from './api.js';
 
 const tabs = [
   ['dashboard', 'Dashboard', '▦'],
@@ -70,6 +70,9 @@ function toDateTimeParts(value) {
 }
 
 export default function App() {
+  const [session, setSession] = useState(getStoredSession);
+  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginLoading, setLoginLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -85,7 +88,7 @@ export default function App() {
   const [stockIn, setStockIn] = useState(emptyStockIn);
   const [stockOut, setStockOut] = useState(emptyStockOut);
 
-  const isReady = API_BASE_URL && API_TOKEN;
+  const isReady = API_BASE_URL && session.token;
   const lowStockCount = useMemo(
     () => currentStock.filter((item) => Number(item.quantity) <= Number(item.minimum_stock)).length,
     [currentStock]
@@ -113,7 +116,46 @@ export default function App() {
     if (isReady) {
       refreshAll();
     }
-  }, []);
+  }, [isReady]);
+
+  async function handleLogin(event) {
+    event.preventDefault();
+    setError('');
+    setStatus('');
+    setLoginLoading(true);
+
+    try {
+      const response = await loginRequest(loginForm.username.trim(), loginForm.password);
+      const token = response.data?.token;
+
+      if (!token) {
+        throw new Error('Login succeeded but no token was returned.');
+      }
+
+      saveSession(token, loginForm.username.trim());
+      setSession({ token, username: loginForm.username.trim() });
+      setLoginForm({ username: '', password: '' });
+      setStatus('Login successful');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  function logout() {
+    clearSession();
+    setSession({ token: '', username: '' });
+    setStatus('');
+    setError('');
+    setDepartments([]);
+    setItems([]);
+    setMovements([]);
+    setLogs([]);
+    setCurrentStock([]);
+    setStockByDepartment([]);
+    setActiveTab('dashboard');
+  }
 
   async function run(action, successMessage = '') {
     setError('');
@@ -124,6 +166,10 @@ export default function App() {
         setStatus(successMessage);
       }
     } catch (err) {
+      if (err.status === 401) {
+        clearSession();
+        setSession({ token: '', username: '' });
+      }
       setError(err.message);
     }
   }
@@ -230,24 +276,34 @@ export default function App() {
         </div>
         <nav>
           {tabs.map(([key, label, icon]) => (
-            <button key={key} className={activeTab === key ? 'active' : ''} onClick={() => setActiveTab(key)}>
+            <button
+              key={key}
+              className={activeTab === key ? 'active' : ''}
+              disabled={!session.token}
+              onClick={() => setActiveTab(key)}
+            >
               <span className="nav-icon">{icon}</span>
               <span>{label}</span>
             </button>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          {/* <button type="button" className="sidebar-cta" onClick={() => setActiveTab('stock-in')}>
-            Record Bulk Stock In
-          </button> */}
-          {/* <div className="admin-chip">
-            <span>WA</span>
-            <div>
-              <strong>Warehouse Admin</strong>
-              <small>admin.reg-a@nexus.com</small>
+        {session.token && (
+          <div className="sidebar-bottom">
+            {/* <button type="button" className="sidebar-cta" onClick={() => setActiveTab('stock-in')}>
+              Record Bulk Stock In
+            </button> */}
+            <div className="admin-chip">
+              <span>{session.username ? session.username.slice(0, 2).toUpperCase() : 'AD'}</span>
+              <div>
+                <strong>{session.username || 'Warehouse Admin'}</strong>
+                <small>Signed in</small>
+              </div>
             </div>
-          </div> */}
-        </div>
+            <button type="button" className="secondary logout-button" onClick={logout}>
+              Logout
+            </button>
+          </div>
+        )}
       </aside>
 
       <main>
@@ -255,9 +311,17 @@ export default function App() {
 
         {status && <div className="notice success">{status}</div>}
         {error && <div className="notice error">{error}</div>}
-        {!isReady && <div className="notice error">Frontend API host or token is not configured.</div>}
+        {!API_BASE_URL && <div className="notice error">Frontend API host is not configured.</div>}
+        {!session.token && (
+          <LoginScreen
+            value={loginForm}
+            loading={loginLoading}
+            onChange={setLoginForm}
+            onSubmit={handleLogin}
+          />
+        )}
 
-        {activeTab === 'dashboard' && (
+        {isReady && activeTab === 'dashboard' && (
           <section>
             <div className="metrics">
               <Metric label="Total Items" value={items.length} note="Master SKUs" />
@@ -271,7 +335,7 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === 'departments' && (
+        {isReady && activeTab === 'departments' && (
           <section className="grid-two">
             <Panel title="Create Department">
               <form onSubmit={createDepartment}>
@@ -294,7 +358,7 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === 'items' && (
+        {isReady && activeTab === 'items' && (
           <section className="grid-two wide-right">
             <Panel title="Create Item Master">
               <ItemForm value={itemForm} onChange={setItemForm} onSubmit={createItem} />
@@ -346,13 +410,13 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === 'stock-in' && (
+        {isReady && activeTab === 'stock-in' && (
           <Panel title="Stock In">
             <StockInForm items={items} value={stockIn} onChange={setStockIn} onSubmit={submitStockIn} />
           </Panel>
         )}
 
-        {activeTab === 'stock-out' && (
+        {isReady && activeTab === 'stock-out' && (
           <Panel title="Stock Out">
             <StockOutForm
               items={items}
@@ -364,7 +428,7 @@ export default function App() {
           </Panel>
         )}
 
-        {activeTab === 'reports' && (
+        {isReady && activeTab === 'reports' && (
           <section>
             <Panel title="Current Stock">
               <Table
@@ -384,7 +448,7 @@ export default function App() {
           </section>
         )}
 
-        {activeTab === 'logs' && (
+        {isReady && activeTab === 'logs' && (
           <Panel title="Activity Logs">
             <Table
               columns={['Time', 'Admin', 'Action', 'Table', 'Record']}
@@ -394,6 +458,47 @@ export default function App() {
         )}
       </main>
     </div>
+  );
+}
+
+function LoginScreen({ value, loading, onChange, onSubmit }) {
+  return (
+    <section className="login-layout">
+      <div className="login-copy">
+        <span>Warehouse Access</span>
+        <h2>Sign in to manage stock</h2>
+        <p>Use your admin credentials to view inventory, record stock movements, and review reports.</p>
+      </div>
+      <div className="panel login-panel">
+        <div className="panel-header">
+          <h2>Login</h2>
+        </div>
+        <form onSubmit={onSubmit}>
+          <label>
+            Username
+            <input
+              autoComplete="username"
+              value={value.username}
+              onChange={(event) => onChange({ ...value, username: event.target.value })}
+              placeholder="admin"
+            />
+          </label>
+          <label>
+            Password
+            <input
+              autoComplete="current-password"
+              type="password"
+              value={value.password}
+              onChange={(event) => onChange({ ...value, password: event.target.value })}
+              placeholder="Enter password"
+            />
+          </label>
+          <button type="submit" disabled={loading}>
+            {loading ? 'Signing in...' : 'Login'}
+          </button>
+        </form>
+      </div>
+    </section>
   );
 }
 
