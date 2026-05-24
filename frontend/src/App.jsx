@@ -38,6 +38,8 @@ const emptyStockIn = {
   items: [{ item_id: '', quantity: 1 }],
 };
 
+const adminUsername = 'admin';
+
 function toApiDateTime(value) {
   if (!value) {
     return '';
@@ -71,7 +73,7 @@ function toDateTimeParts(value) {
 
 export default function App() {
   const [session, setSession] = useState(getStoredSession);
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
+  const [loginForm, setLoginForm] = useState({ password: '' });
   const [loginLoading, setLoginLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [status, setStatus] = useState('');
@@ -125,16 +127,16 @@ export default function App() {
     setLoginLoading(true);
 
     try {
-      const response = await loginRequest(loginForm.username.trim(), loginForm.password);
+      const response = await loginRequest(adminUsername, loginForm.password);
       const token = response.data?.token;
 
       if (!token) {
         throw new Error('Login succeeded but no token was returned.');
       }
 
-      saveSession(token, loginForm.username.trim());
-      setSession({ token, username: loginForm.username.trim() });
-      setLoginForm({ username: '', password: '' });
+      saveSession(token, adminUsername);
+      setSession({ token, username: adminUsername });
+      setLoginForm({ password: '' });
       setStatus('Login successful');
     } catch (err) {
       setError(err.message);
@@ -474,15 +476,6 @@ function LoginScreen({ value, loading, onChange, onSubmit }) {
           <h2>Login</h2>
         </div>
         <form onSubmit={onSubmit}>
-          <label>
-            Username
-            <input
-              autoComplete="username"
-              value={value.username}
-              onChange={(event) => onChange({ ...value, username: event.target.value })}
-              placeholder="admin"
-            />
-          </label>
           <label>
             Password
             <input
